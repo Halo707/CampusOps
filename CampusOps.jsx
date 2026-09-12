@@ -12,26 +12,6 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from "recharts";
 
-/* ============================================================================
-   CAMPUSOPS — Autonomous AI for Real-World Campus Operations
-   Single-file client application. Runs entirely in-browser.
-
-   Why it's built this way:
-   This environment has no outbound network access, so a live Postgres
-   instance and a live OpenAI API call are not reachable here. Per the
-   product spec's own DEMO_MODE requirement (the app must fully function
-   with no OPENAI_API_KEY and no external dependency), everything below is
-   REAL and EXECUTES — the "database" is an in-memory store instead of
-   Postgres, and the "model" is a deterministic policy-aware planner
-   instead of a live LLM call. Every tool call actually mutates state,
-   every approval actually gates execution, every log entry is real.
-   The provider layer (runAgentTurn) is the single seam you'd swap to
-   call the real OpenAI tool-calling API in a networked deployment.
-============================================================================ */
-
-// ---------------------------------------------------------------------------
-// THEME
-// ---------------------------------------------------------------------------
 const RISK_STYLES = {
   LOW:      { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", dot: "bg-emerald-400" },
   MEDIUM:   { text: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   dot: "bg-amber-400" },
