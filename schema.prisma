@@ -1,0 +1,214 @@
+// CampusOps — Prisma schema
+// Mirrors the in-memory store shape from CampusOps.jsx 1:1, so the tool
+// logic in execTool()/runToolLogic() ports over with minimal changes —
+// swap array.find()/array.map() for prisma.model.findUnique()/update().
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+  CRITICAL
+  RESERVED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum TicketStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum IncidentStatus {
+  OPEN
+  MONITORING
+  RESOLVED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  role      String   @default("student") // student | faculty | facilities_admin | privileged_admin
+  createdAt DateTime @default(now())
+
+  bookings      Booking[]
+  agentRuns     AgentRun[]
+  approvals     ApprovalRequest[] @relation("ApprovalReviewer")
+  notifications Notification[]    @relation("NotificationRecipient")
+}
+
+model Building {
+  id     String @id @default(cuid())
+  name   String
+  floors Int
+
+  rooms     Room[]
+  incidents Incident[]
+}
+
+model Room {
+  id             String     @id @default(cuid())
+  number         String
+  buildingId     String
+  building       Building   @relation(fields: [buildingId], references: [id])
+  capacity       Int
+  hasAC          Boolean    @default(false)
+  hasProjector   Boolean    @default(false)
+  status         RoomStatus @default(AVAILABLE)
+  isInfra        Boolean    @default(false) // e.g. main power room — never bookable
+
+  bookings           Booking[]
+  maintenanceTickets MaintenanceTicket[]
+  incidents          Incident[]
+
+  @@unique([buildingId, number])
+}
+
+model Booking {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  course    String
+  facultyId String?
+  faculty   User?    @relation(fields: [facultyId], references: [id])
+  startTime DateTime
+  endTime   DateTime
+  students  Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Technician {
+  id        String  @id @default(cuid())
+  name      String
+  specialty String // HVAC | Electrical | Network/IT | AV/Projector
+  available Boolean @default(true)
+
+  tickets MaintenanceTicket[]
+}
+
+model MaintenanceTicket {
+  id           String       @id @default(cuid())
+  roomId       String
+  room         Room         @relation(fields: [roomId], references: [id])
+  issue        String
+  priority     RiskLevel
+  status       TicketStatus @default(OPEN)
+  technicianId String?
+  technician   Technician?  @relation(fields: [technicianId], references: [id])
+  createdAt    DateTime     @default(now())
+  resolvedAt   DateTime?
+
+  incidents Incident[]
+}
+
+model Incident {
+  id             String           @id @default(cuid())
+  title          String
+  buildingId     String
+  building       Building         @relation(fields: [buildingId], references: [id])
+  roomId         String?
+  room           Room?            @relation(fields: [roomId], references: [id])
+  severity       IncidentSeverity
+  status         IncidentStatus   @default(OPEN)
+  aiConfidence   Float            @default(0)
+  ticketId       String?
+  ticket         MaintenanceTicket? @relation(fields: [ticketId], references: [id])
+  createdAt      DateTime         @default(now())
+  resolvedAt     DateTime?
+
+  agentRuns AgentRun[]
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  message     String
+  recipientId String?
+  recipient   User?    @relation("NotificationRecipient", fields: [recipientId], references: [id])
+  recipientCount Int   @default(0) // used when broadcasting to a group rather than one user
+  sentAt      DateTime @default(now())
+}
+
+// One AgentRun = one end-to-end incident-handling session (a "conversation turn").
+model AgentRun {
+  id         String     @id @default(cuid())
+  title      String
+  incidentId String?
+  incident   Incident?  @relation(fields: [incidentId], references: [id])
+  userId     String?
+  user       User?      @relation(fields: [userId], references: [id])
+  status     String     @default("running") // running | completed | completed_with_denial
+  startedAt  DateTime   @default(now())
+  endedAt    DateTime?
+
+  actions   AgentAction[]
+  approvals ApprovalRequest[]
+}
+
+// One AgentAction = one tool call within a run. This IS the audit log.
+model AgentAction {
+  id         String    @id @default(cuid())
+  runId      String
+  run        AgentRun  @relation(fields: [runId], references: [id])
+  tool       String
+  args       Json
+  reason     String
+  risk       RiskLevel
+  approval   String    // N/A | PENDING | APPROVED | DENIED | BLOCKED
+  result     String?
+  success    Boolean?
+  durationMs Int       @default(0)
+  createdAt  DateTime  @default(now())
+}
+
+model ApprovalRequest {
+  id          String         @id @default(cuid())
+  runId       String?
+  run         AgentRun?      @relation(fields: [runId], references: [id])
+  tool        String
+  args        Json
+  reason      String
+  risk        RiskLevel
+  privileged  Boolean        @default(false)
+  affected    String
+  status      ApprovalStatus @default(PENDING)
+  reviewerId  String?
+  reviewer    User?          @relation("ApprovalReviewer", fields: [reviewerId], references: [id])
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+}
+
+model SystemPolicy {
+  id   String    @id @default(cuid())
+  name String
+  risk RiskLevel
+  rule String
+}
